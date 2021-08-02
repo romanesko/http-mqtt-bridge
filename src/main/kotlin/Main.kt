@@ -1,5 +1,6 @@
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import io.javalin.Javalin
+import io.javalin.http.ForbiddenResponse
 import org.eclipse.paho.client.mqttv3.MqttClient
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions
 import org.eclipse.paho.client.mqttv3.MqttMessage
@@ -12,19 +13,17 @@ import java.util.concurrent.TimeUnit
 import java.util.logging.Logger
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-data class Request(val topic: String, val ack_topic: String?, val ack_timeout: Long = 5, val message: String?)
+data class Request(val secret: String, val topic: String, val ack_topic: String?, val ack_timeout: Long = 5, val message: String?)
 data class Response(val message: String)
 
 fun main() {
 
     val logger: org.slf4j.Logger = LoggerFactory.getLogger("main")
 
-    val mqttServerUri: String = System.getenv("MQTT_SERVER_URI")
-        ?: throw RuntimeException("env MQTT_SERVER_URI is not defined (like tcp://localhost:17050)")
-    val mqttUserName: String =
-        System.getenv("MQTT_USERNAME") ?: throw RuntimeException("env MQTT_USERNAME is not defined")
-    val mqttPassword: String =
-        System.getenv("MQTT_PASSWORD") ?: throw RuntimeException("env MQTT_PASSWORD is not defined")
+    val mqttServerUri: String = System.getenv("MQTT_SERVER_URI") ?: throw RuntimeException("env MQTT_SERVER_URI is not defined (like tcp://localhost:17050)")
+    val mqttUserName: String = System.getenv("MQTT_USERNAME") ?: throw RuntimeException("env MQTT_USERNAME is not defined")
+    val mqttPassword: String = System.getenv("MQTT_PASSWORD") ?: throw RuntimeException("env MQTT_PASSWORD is not defined")
+    val secret: String = System.getenv("SECRET") ?: throw RuntimeException("env SECRET is not defined")
 
     val client = MqttClient(mqttServerUri, "http-mqtt-bridge");
 
@@ -55,6 +54,11 @@ fun main() {
 
     app.post("/") { ctx ->
         val body = ctx.bodyAsClass(Request::class.java)
+
+        if(body.secret != secret){
+            throw ForbiddenResponse("Wrong secret")
+        }
+
         if (body.ack_topic != null) {
             try {
                 ctx.json(CompletableFuture<Response>().apply {
