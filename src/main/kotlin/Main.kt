@@ -2,9 +2,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import io.javalin.Javalin
 import org.eclipse.paho.client.mqttv3.MqttClient
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions
-import java.lang.RuntimeException
 import java.util.*
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.schedule
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -48,23 +48,20 @@ fun main() {
         }
     }
 
-    fun waitFor(key: String, timeout: Long) = CompletableFuture<Response>().apply {
+    fun waitFor(key: String) = CompletableFuture<Response>().apply {
         futures[key] = this;
-
-        Timer(key, false).schedule(timeout * 1000) {
-            val future = futures[key]!!
-            if (!future.isDone) {
-                futures.remove(key)
-                future.completeExceptionally(TimeoutException("Could not get response for $timeout sec"))
-            }
-
-        }
     }
 
     app.post("/") { ctx ->
         val body = ctx.bodyAsClass(Request::class.java)
         if (body.ack_topic != null) {
-            ctx.json(waitFor(body.ack_topic, body.ack_timeout))
+            try{
+                ctx.json(waitFor(body.ack_topic).get(body.ack_timeout, TimeUnit.SECONDS))
+            } catch (e: java.util.concurrent.TimeoutException){
+                throw TimeoutException("Could not get response for $body.ack_timeout sec")
+            } finally {
+                futures.remove(body.ack_topic)
+            }
         } else {
             ctx.json(Response("ok"))
         }
