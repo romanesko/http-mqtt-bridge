@@ -30,23 +30,14 @@ fun main() {
         exception(Exception::class.java) { e, _ -> e.printStackTrace() }
     }.start(ipAddress, 8080)
 
-    class TimeoutException(message: String) : Exception(message)
-
-    app.exception(TimeoutException::class.java) { e, ctx ->
+    app.exception(java.util.concurrent.TimeoutException::class.java) { e, ctx ->
         ctx.status(408)
         ctx.json(mapOf("error" to e.message))
     }
 
     val futures: MutableMap<String, CompletableFuture<Response>> = HashMap()
 
-    client.subscribe("#") { topic, message ->
-        run {
-            futures[topic]?.let {
-                it.complete(Response(message.toString()))
-                futures.remove(topic)
-            }
-        }
-    }
+    client.subscribe("#") { topic, message ->  futures[topic]?.complete(Response(message.toString())) }
 
     fun waitFor(key: String) = CompletableFuture<Response>().apply {
         futures[key] = this;
@@ -57,8 +48,6 @@ fun main() {
         if (body.ack_topic != null) {
             try{
                 ctx.json(waitFor(body.ack_topic).get(body.ack_timeout, TimeUnit.SECONDS))
-            } catch (e: java.util.concurrent.TimeoutException){
-                throw TimeoutException("Could not get response for $body.ack_timeout sec")
             } finally {
                 futures.remove(body.ack_topic)
             }
